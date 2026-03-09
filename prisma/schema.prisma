@@ -1,0 +1,296 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+
+model User {
+  id        Int      @id @default(autoincrement())
+  nombre    String
+  email     String   @unique
+  password  String
+
+  active    Boolean  @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deletedAt DateTime?
+
+  updatedBy Int?
+
+  roles     UserRole[]
+  sessions  Session[]
+
+  auditLogs AuditLog[]
+
+  @@map("users")
+}
+
+
+model Role {
+  id          Int      @id @default(autoincrement())
+  name        String   @unique
+  description String?
+
+  createdAt   DateTime @default(now())
+
+  users       UserRole[]
+  permissions RolePermission[]
+
+  updatedBy Int?
+  deletedAt DateTime?
+  updatedAt DateTime @updatedAt
+  active    Boolean  @default(true)
+
+  @@map("roles")
+}
+
+
+model UserRole {
+  id     Int @id @default(autoincrement())
+
+  userId Int
+  roleId Int
+
+  user   User @relation(fields: [userId], references: [id])
+  role   Role @relation(fields: [roleId], references: [id])
+  updatedBy Int?
+  deletedAt DateTime?
+  updatedAt DateTime @updatedAt
+  active    Boolean  @default(true)
+  @@unique([userId, roleId])
+  @@map("user_roles")
+}
+
+
+model Permission {
+  id          Int     @id @default(autoincrement())
+  name        String  @unique
+  description String?
+  updatedBy Int?
+  deletedAt DateTime?
+  updatedAt DateTime @updatedAt
+  active    Boolean  @default(true)
+  roles       RolePermission[]
+
+  @@map("permissions")
+}
+
+
+model RolePermission {
+  id           Int @id @default(autoincrement())
+
+  roleId       Int
+  permissionId Int
+
+  role         Role       @relation(fields: [roleId], references: [id])
+  permission   Permission @relation(fields: [permissionId], references: [id])
+
+  @@unique([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+
+model Session {
+  id        Int      @id @default(autoincrement())
+
+  userId    Int
+  token     String   @unique
+
+  ipAddress String?
+  userAgent String?
+
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+
+  user      User     @relation(fields: [userId], references: [id])
+
+  @@map("sessions")
+}
+
+
+model AuditLog {
+  id        Int      @id @default(autoincrement())
+
+  userId    Int?
+  action    String
+  entity    String
+  entityId  Int?
+
+  metadata  Json?
+
+  createdAt DateTime @default(now())
+  updatedBy Int?
+  updatedAt DateTime @updatedAt
+  user      User?    @relation(fields: [userId], references: [id])
+
+  @@map("audit_logs")
+}
+
+model Folder {
+  id          Int       @id @default(autoincrement())
+
+  name        String
+  slug        String?   @unique
+
+  url         String?
+  softwareUrl String?
+  driveUrl    String?
+
+  client      String?
+
+  parentId    Int?
+
+  parent      Folder?   @relation("FolderHierarchy", fields: [parentId], references: [id], onDelete: Cascade)
+  children    Folder[]  @relation("FolderHierarchy")
+
+  files       File[]
+
+  active      Boolean   @default(true)
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+  updatedBy   Int?
+
+  @@unique([parentId, name])
+  @@index([parentId])
+
+  @@map("folder")
+}
+
+
+model File {
+  id           Int      @id @default(autoincrement())
+
+  name         String
+
+  city         String?
+  type         String?
+  reference    String?
+  comment      String?
+  status       String?
+   
+  url          String?
+  softwareUrl  String?
+  driveUrl     String?
+
+  folderId     Int?
+  folder       Folder?  @relation(fields: [folderId], references: [id], onDelete: SetNull)
+
+  solicitudId  Int?
+  solicitud    Solicitud? @relation(fields: [solicitudId], references: [id])
+
+  userId       Int
+  user         User      @relation(fields: [userId], references: [id])
+
+  active       Boolean   @default(true)
+
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime?
+  updatedBy    Int?
+
+  @@index([folderId])
+  @@index([userId])
+  @@index([solicitudId])
+
+  @@map("file")
+}
+
+model Fotos {
+  id           Int      @id @default(autoincrement())
+  name         String
+  city         String?
+  type         String?
+  reference    String?
+  comment      String?
+  status       String?
+  page         String?
+  url          String?
+  softwareUrl  String?
+  driveUrl     String?
+
+  folderId     Int?
+  folder       Folder?  @relation(fields: [folderId], references: [id], onDelete: SetNull)
+
+  solicitudId  Int?
+  solicitud    Solicitud? @relation(fields: [solicitudId], references: [id])
+  userId       Int
+  user         User      @relation(fields: [userId], references: [id])
+  active       Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime?
+  updatedBy    Int?
+
+  @@index([folderId])
+  @@index([userId])
+  @@index([solicitudId])
+
+  @@map("fotos")
+}
+
+
+model Solicitud {
+  id         Int      @id @default(autoincrement())
+
+  type       String?
+  reference  String?
+  comment    String?
+  status     String?
+
+  interno    String   @unique
+
+  dateTime   DateTime
+
+  active     Boolean  @default(true)
+  emailSent  Boolean  @default(false)
+
+  files      File[]
+
+  userId     Int
+  user       User     @relation(fields: [userId], references: [id])
+
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  deletedAt  DateTime?
+  updatedBy  Int?
+
+  @@index([userId])
+  @@index([status])
+
+  @@map("solicitud")
+}
+
+model Alert {
+  id        Int      @id @default(autoincrement())
+
+  type      String
+  reason    String
+  action    String
+
+  priority  String
+  status    Int
+
+  deadline  DateTime?
+
+  userId    Int?
+  user      User?    @relation(fields: [userId], references: [id])
+
+  active    Boolean  @default(true)
+  emailSent Boolean  @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  updatedBy Int?
+
+  @@index([userId])
+
+  @@map("alert")
+}
+
