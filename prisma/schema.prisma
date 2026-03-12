@@ -24,8 +24,14 @@ model User {
 
   roles     UserRole[]
   sessions  Session[]
-
   auditLogs AuditLog[]
+
+  // Relaciones inversas faltantes (CORREGIDO)
+  files     File[]
+  fotos     Fotos[]
+  solicitudes Solicitud[]
+  folders   Folder[]
+  internos  Interno[]
 
   @@map("users")
 }
@@ -37,14 +43,13 @@ model Role {
   description String?
 
   createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  deletedAt   DateTime?
+  updatedBy   Int?
+  active      Boolean  @default(true)
 
   users       UserRole[]
   permissions RolePermission[]
-
-  updatedBy Int?
-  deletedAt DateTime?
-  updatedAt DateTime @updatedAt
-  active    Boolean  @default(true)
 
   @@map("roles")
 }
@@ -58,10 +63,12 @@ model UserRole {
 
   user   User @relation(fields: [userId], references: [id])
   role   Role @relation(fields: [roleId], references: [id])
+
   updatedBy Int?
   deletedAt DateTime?
   updatedAt DateTime @updatedAt
   active    Boolean  @default(true)
+
   @@unique([userId, roleId])
   @@map("user_roles")
 }
@@ -71,11 +78,13 @@ model Permission {
   id          Int     @id @default(autoincrement())
   name        String  @unique
   description String?
+
   updatedBy Int?
   deletedAt DateTime?
   updatedAt DateTime @updatedAt
   active    Boolean  @default(true)
-  roles       RolePermission[]
+
+  roles     RolePermission[]
 
   @@map("permissions")
 }
@@ -124,12 +133,14 @@ model AuditLog {
   metadata  Json?
 
   createdAt DateTime @default(now())
-  updatedBy Int?
   updatedAt DateTime @updatedAt
+  updatedBy Int?
+
   user      User?    @relation(fields: [userId], references: [id])
 
   @@map("audit_logs")
 }
+
 
 model Folder {
   id          Int       @id @default(autoincrement())
@@ -149,6 +160,11 @@ model Folder {
   children    Folder[]  @relation("FolderHierarchy")
 
   files       File[]
+  fotos       Fotos[]
+
+  // Relación con User (CORREGIDO: agregada relación formal)
+  userId      Int?
+  user        User?     @relation(fields: [userId], references: [id])
 
   active      Boolean   @default(true)
 
@@ -174,7 +190,7 @@ model File {
   reference    String?
   comment      String?
   status       String?
-   
+
   url          String?
   softwareUrl  String?
   driveUrl     String?
@@ -202,6 +218,7 @@ model File {
   @@map("file")
 }
 
+
 model Fotos {
   id           Int      @id @default(autoincrement())
   name         String
@@ -216,12 +233,14 @@ model Fotos {
   driveUrl     String?
 
   folderId     Int?
-  folder       Folder?  @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  folder       Folder?   @relation(fields: [folderId], references: [id], onDelete: SetNull)
 
   solicitudId  Int?
   solicitud    Solicitud? @relation(fields: [solicitudId], references: [id])
+
   userId       Int
-  user         User      @relation(fields: [userId], references: [id])
+  user         User       @relation(fields: [userId], references: [id])
+
   active       Boolean   @default(true)
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
@@ -252,6 +271,7 @@ model Solicitud {
   emailSent  Boolean  @default(false)
 
   files      File[]
+  fotos      Fotos[]
 
   userId     Int
   user       User     @relation(fields: [userId], references: [id])
@@ -267,30 +287,38 @@ model Solicitud {
   @@map("solicitud")
 }
 
-model Alert {
+
+model Interno {
   id        Int      @id @default(autoincrement())
 
-  type      String
-  reason    String
-  action    String
+  // Número o código interno único
+  interno   String   @unique
 
-  priority  String
-  status    Int
+  // Estado de validación
+  validado  Boolean  @default(false)
 
-  deadline  DateTime?
+  // Cliente asociado
+  cliente   String?
 
-  userId    Int?
-  user      User?    @relation(fields: [userId], references: [id])
+  // Estado del registro (ej: "pendiente", "aprobado", "rechazado")
+  estado    String?
+
+  // Usuario propietario/creador
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id])
 
   active    Boolean  @default(true)
-  emailSent Boolean  @default(false)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  deletedAt DateTime?
+
+  // ID del usuario que realizó la última modificación
   updatedBy Int?
 
   @@index([userId])
+  @@index([estado])
+  @@index([interno])
 
-  @@map("alert")
+  @@map("interno")
 }
-
