@@ -10,6 +10,8 @@ import { FilterInternoDto } from './dto/filter-interno.dto';
 import { FolderService } from '../folder/folder.service';
 import { Prisma } from '@prisma/client';
 
+type FolderResult = Awaited<ReturnType<FolderService['createFromInterno']>>;
+
 @Injectable()
 export class InternoService {
   constructor(
@@ -20,13 +22,11 @@ export class InternoService {
   async create(createInternoDto: CreateInternoDto) {
     const { interno, userId, cliente, ...rest } = createInternoDto;
 
-    // Verificar unicidad
     const exists = await this.prisma.interno.findUnique({ where: { interno } });
     if (exists) {
       throw new BadRequestException(`Ya existe un interno con el valor "${interno}"`);
     }
 
-    // Crear interno en BD
     const nuevoInterno = await this.prisma.interno.create({
       data: { interno, userId, cliente, ...rest },
       include: {
@@ -34,8 +34,7 @@ export class InternoService {
       },
     });
 
-    // Crear carpeta en Drive y BD (no bloquea si falla)
-    let folderResult = null;
+    let folderResult: FolderResult | null = null;
     try {
       folderResult = await this.folderService.createFromInterno({
         internoName: interno,
@@ -124,7 +123,6 @@ export class InternoService {
       const exists = await this.prisma.interno.findFirst({
         where: { interno, NOT: { id } },
       });
-
       if (exists) {
         throw new BadRequestException(`Ya existe un interno con el valor "${interno}"`);
       }
