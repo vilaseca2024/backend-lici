@@ -5,6 +5,7 @@ import { CacheModule } from '@nestjs/cache-manager';
 import { ExternalDbModule } from './external-db/external-db.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { UsersModule } from './users/users.module';
+import { InternoModule } from './interno/interno.module';
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { UsersModule } from './users/users.module';
     ExternalDbModule,
     PrismaModule,
     UsersModule,
+    InternoModule,
   ],
 })
 export class AppModule {}

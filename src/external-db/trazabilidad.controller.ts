@@ -50,4 +50,21 @@ export class TrazabilidadController {
     await this.trazabilidadService.invalidarCache(interno);
     return { message: `Caché invalidado para '${interno}'` };
   }
+
+
+  @Get()
+  async getTodos(): Promise<{ total: number; data: TramiteRow[] }> {
+    const data = await this.trazabilidadService.fetchTodos();
+    return { total: data.length, data };
+  }
+
+  /**
+   * DELETE /trazabilidad/cache
+   * Invalida el caché general
+   */
+  @Delete('cache')
+  async invalidarCacheTodos(): Promise<{ message: string }> {
+    await this.trazabilidadService.invalidarCacheTodos();
+    return { message: `Caché general invalidado` };
+  }
 }

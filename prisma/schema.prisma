@@ -290,35 +290,20 @@ model Solicitud {
 
 model Interno {
   id        Int      @id @default(autoincrement())
-
-  // Número o código interno único
   interno   String   @unique
-
-  // Estado de validación
   validado  Boolean  @default(false)
-
-  // Cliente asociado
   cliente   String?
-
-  // Estado del registro (ej: "pendiente", "aprobado", "rechazado")
   estado    String?
-
-  // Usuario propietario/creador
   userId    Int
   user      User     @relation(fields: [userId], references: [id])
-
   active    Boolean  @default(true)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   deletedAt DateTime?
-
-  // ID del usuario que realizó la última modificación
   updatedBy Int?
-
   @@index([userId])
   @@index([estado])
   @@index([interno])
-
   @@map("interno")
 }
