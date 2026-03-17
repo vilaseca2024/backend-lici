@@ -10,11 +10,10 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
       secretOrKey: process.env.JWT_SECRET || 'tu_super_secreto_jwt',
-      passReqToCallback: true, // para poder leer token y comprobar session
+      passReqToCallback: true,
     });
   }
 
-  // Si passReqToCallback: el primer arg es req
   async validate(req: any, payload: any) {
     const authHeader = req.headers['authorization'] || '';
     const token = (authHeader as string).replace(/^Bearer\s+/i, '');
@@ -24,7 +23,6 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     const session = await this.prisma.session.findUnique({ where: { token } });
     if (!session) throw new UnauthorizedException('Session not found');
     if (new Date(session.expiresAt) < new Date()) {
-      // eliminar sesión vencida
       await this.prisma.session.deleteMany({ where: { id: session.id } });
       throw new UnauthorizedException('Session expired');
     }
@@ -32,12 +30,25 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     // Verificar usuario existe y no eliminado
     const user = await this.prisma.user.findUnique({
       where: { id: payload.sub },
-      include: { roles: true },
+      include: {
+        roles: {
+          include: { role: true },  // ✅ incluir el role completo para obtener el name
+        },
+      },
     });
+
     if (!user || user.deletedAt) throw new UnauthorizedException('User invalid');
 
-    // Devuelve el objeto que estará en request.user
     const { password, ...rest } = user as any;
-    return { ...rest, sessionId: session.id };
+
+    // ✅ Aplanamos los roles a un array de strings para que RolesGuard funcione
+    // user.roles viene como UserRole[] → [{ role: { name: 'ADMIN' } }, ...]
+    const roles: string[] = (user.roles ?? []).map((r: any) => r?.role?.name).filter(Boolean);
+
+    return {
+      ...rest,
+      roles,           // ✅ ['ADMIN', 'USER', ...] — array de strings
+      sessionId: session.id,
+    };
   }
 }

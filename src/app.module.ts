@@ -6,6 +6,8 @@ import { ExternalDbModule } from './external-db/external-db.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { UsersModule } from './users/users.module';
 import { InternoModule } from './interno/interno.module';
+import { RolesModule } from './roles/roles.module';
+import { ComparativaModule } from './comparativa/comparativa.module';
 
 @Module({
   imports: [
@@ -19,6 +21,8 @@ import { InternoModule } from './interno/interno.module';
     PrismaModule,
     UsersModule,
     InternoModule,
+    RolesModule,
+    ComparativaModule,
   ],
 })
 export class AppModule {}

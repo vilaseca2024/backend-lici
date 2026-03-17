@@ -22,11 +22,19 @@ export class InternoService {
   async create(createInternoDto: CreateInternoDto) {
     const { interno, userId, cliente, ...rest } = createInternoDto;
 
+    // ─── 1. Verificar que el usuario existe ──────────────────────────────────
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) {
+      throw new BadRequestException(`No existe un usuario con id "${userId}"`);
+    }
+
+    // ─── 2. Verificar duplicado de interno ───────────────────────────────────
     const exists = await this.prisma.interno.findUnique({ where: { interno } });
     if (exists) {
       throw new BadRequestException(`Ya existe un interno con el valor "${interno}"`);
     }
 
+    // ─── 3. Crear el registro en BD ──────────────────────────────────────────
     const nuevoInterno = await this.prisma.interno.create({
       data: { interno, userId, cliente, ...rest },
       include: {
@@ -34,6 +42,7 @@ export class InternoService {
       },
     });
 
+    // ─── 4. Crear carpetas (Drive + local) ───────────────────────────────────
     let folderResult: FolderResult | null = null;
     try {
       folderResult = await this.folderService.createFromInterno({
@@ -42,12 +51,19 @@ export class InternoService {
         userId,
       });
     } catch (error) {
-      console.error(`[InternoService] Error creando carpeta en Drive: ${error.message}`);
+      console.error(`[InternoService] Error creando carpetas: ${error.message}`);
     }
 
     return {
       interno: nuevoInterno,
       folder: folderResult?.folder ?? null,
+      // Exponer la URL segura local y la de Drive al cliente
+      urls: folderResult
+        ? {
+            local: folderResult.secureLocalUrl ?? null,
+            drive: folderResult.driveUrl ?? null,
+          }
+        : null,
     };
   }
 

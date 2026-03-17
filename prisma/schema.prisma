@@ -5,7 +5,7 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
-}
+  }
 
 
 model User {
@@ -295,6 +295,7 @@ model Interno {
   cliente   String?
   estado    String?
   userId    Int
+  paso      Int?
   user      User     @relation(fields: [userId], references: [id])
   active    Boolean  @default(true)
 
