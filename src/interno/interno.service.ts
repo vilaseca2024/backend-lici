@@ -9,6 +9,7 @@ import { UpdateInternoDto } from './dto/update-interno.dto';
 import { FilterInternoDto } from './dto/filter-interno.dto';
 import { FolderService } from '../folder/folder.service';
 import { Prisma } from '@prisma/client';
+import { QueryInternoConFolderDto } from './dto/query-interno-con-folder.dto';
 
 type FolderResult = Awaited<ReturnType<FolderService['createFromInterno']>>;
 
@@ -185,5 +186,71 @@ export class InternoService {
       where: { id },
       data: { deletedAt: null, active: true },
     });
+  }
+
+  async findConFolder(query: QueryInternoConFolderDto) {
+    const page  = query.page  ?? 1;
+    const limit = query.limit ?? 20;
+    const skip  = (page - 1) * limit;
+
+    const where: Prisma.InternoWhereInput = {
+      deletedAt: null,
+      active: true,
+      ...(query.search && {
+        interno: { contains: query.search, mode: 'insensitive' },
+      }),
+      ...(query.estado    && { estado: query.estado }),
+      ...(query.validado !== undefined && { validado: query.validado }),
+    };
+
+    const [internos, total] = await this.prisma.$transaction([
+      this.prisma.interno.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { interno: 'asc' },
+        select: {
+          id:       true,
+          interno:  true,
+          cliente:  true,
+          estado:   true,
+          validado: true,
+          paso:     true,
+        },
+      }),
+      this.prisma.interno.count({ where }),
+    ]);
+
+    // Un solo query para todos los folders — evita N+1
+    const folders = await this.prisma.folder.findMany({
+      where: {
+        name:      { in: internos.map(i => i.interno) },
+        deletedAt: null,
+        active:    true,
+      },
+      select: {
+        id:          true,
+        name:        true,
+        url:         true,
+        softwareUrl: true,
+        driveUrl:    true,
+      },
+    });
+
+    const folderMap = new Map(folders.map(f => [f.name, f]));
+
+    return {
+      data: internos.map(i => ({
+        ...i,
+        folderId: folderMap.get(i.interno)?.id   ?? null,
+        folder:   folderMap.get(i.interno)        ?? null,
+      })),
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
   }
 }

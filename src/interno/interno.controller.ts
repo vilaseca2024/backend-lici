@@ -13,6 +13,8 @@ import { InternoService } from './interno.service';
 import { CreateInternoDto } from './dto/create-interno.dto';
 import { UpdateInternoDto } from './dto/update-interno.dto';
 import { FilterInternoDto } from './dto/filter-interno.dto';
+import { QueryInternoConFolderDto } from './dto/query-interno-con-folder.dto';
+
 @Controller('internos')
 export class InternoController {
   constructor(private readonly internoService: InternoService) {}
@@ -72,5 +74,10 @@ export class InternoController {
   @Patch(':id/restore')
   restore(@Param('id', ParseIntPipe) id: number) {
     return this.internoService.restore(id);
+  }
+
+  @Get('con-folder')
+  findConFolder(@Query() query: QueryInternoConFolderDto) {
+    return this.internoService.findConFolder(query);
   }
 }

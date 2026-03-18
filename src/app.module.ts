@@ -8,6 +8,9 @@ import { UsersModule } from './users/users.module';
 import { InternoModule } from './interno/interno.module';
 import { RolesModule } from './roles/roles.module';
 import { ComparativaModule } from './comparativa/comparativa.module';
+import { FotoModule } from './foto/foto.module';
+import { InternoFotografiaModule } from './interno-fotografia/interno-fotografia.module';
+import { QueueModule } from './queue/queue.module';
 
 @Module({
   imports: [
@@ -23,6 +26,10 @@ import { ComparativaModule } from './comparativa/comparativa.module';
     InternoModule,
     RolesModule,
     ComparativaModule,
+    FotoModule,
+    InternoFotografiaModule,
+    QueueModule,
   ],
 })
 export class AppModule {}
+
