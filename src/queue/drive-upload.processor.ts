@@ -7,7 +7,10 @@ import { ConfigService } from '@nestjs/config';
 import { DRIVE_UPLOAD_QUEUE, DRIVE_UPLOAD_JOB } from './drive-upload.queue';
 
 export interface DriveUploadJobData {
-  fotoId:      number;
+  fotoId?:     number;
+  fileId?:     number;
+  entity?:     'foto' | 'file';
+  driveFolderId?: string; // ID directo si ya es una subcarpeta real
   filePath:    string;   // ruta local absoluta
   fileName:    string;
   mimeType:    string;
@@ -27,34 +30,50 @@ export class DriveUploadProcessor extends WorkerHost {
   }
 
   async process(job: Job<DriveUploadJobData>): Promise<void> {
-    const { fotoId, filePath, fileName, mimeType, internoName } = job.data;
-    this.logger.log(`Procesando job #${job.id} — archivo: "${fileName}"`);
+    const { fotoId, fileId, entity, driveFolderId, filePath, fileName, mimeType, internoName } = job.data;
+    const isFile = entity === 'file';
+    this.logger.log(`Procesando job #${job.id} — archivo: "${fileName}" (${entity || 'foto'})`);
 
     // Leer archivo desde disco local
     const { readFileSync } = await import('fs');
     const buffer = readFileSync(filePath);
 
-    // Resolver carpeta Drive
-    const imcruzId  = await this.driveService.getOrCreateFolder(
-      'IMCRUZ',
-      this.config.get<string>('GOOGLE_DRIVE_IMCRUZ_ID'),
-    );
-    const internoId = await this.driveService.getOrCreateFolder(internoName, imcruzId);
-    const fotosId   = await this.driveService.getOrCreateFolder('fotos', internoId);
+    // Resolver carpeta Drive: si no pasaron un driveFolderId explícito, construimos la jerarquía predeterminada
+    let targetFolderId = driveFolderId;
+    
+    if (!targetFolderId) {
+      const imcruzId  = await this.driveService.getOrCreateFolder(
+        'IMCRUZ',
+        this.config.get<string>('GOOGLE_DRIVE_IMCRUZ_ID'),
+      );
+      const internoId = await this.driveService.getOrCreateFolder(internoName, imcruzId);
+      
+      const subfolderName = isFile ? 'documentos' : 'fotos';
+      targetFolderId = await this.driveService.getOrCreateFolder(subfolderName, internoId);
+    }
 
     // Subir (ya tiene reintentos internos)
-    const fileId = await this.driveService.uploadFile({
-      name: fileName, mimeType, buffer, folderId: fotosId,
+    const driveFileId = await this.driveService.uploadFile({
+      name: fileName, mimeType, buffer, folderId: targetFolderId,
     });
 
-    const driveUrl = this.driveService.getFileUrl(fileId);
+    const driveUrl = this.driveService.getFileUrl(driveFileId);
 
     // Actualizar driveUrl en BD
-    await this.prisma.fotos.update({
-      where: { id: fotoId },
-      data:  { driveUrl },
-    });
-
-    this.logger.log(`Job #${job.id} completado — driveUrl guardada para foto #${fotoId}`);
+    if (isFile && fileId) {
+      await this.prisma.file.update({
+        where: { id: fileId },
+        data:  { driveUrl },
+      });
+      this.logger.log(`Job #${job.id} completado — driveUrl guardada para file #${fileId}`);
+    } else if (fotoId) {
+      await this.prisma.fotos.update({
+        where: { id: fotoId },
+        data:  { driveUrl },
+      });
+      this.logger.log(`Job #${job.id} completado — driveUrl guardada para foto #${fotoId}`);
+    } else {
+      this.logger.warn(`Job #${job.id} alerta: Falta fotoId o fileId para actualizar BD.`);
+    }
   }
 }

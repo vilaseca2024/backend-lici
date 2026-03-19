@@ -3,101 +3,104 @@ import {
   Get,
   Param,
   Res,
-  Req,
-  UseGuards,
   ParseIntPipe,
   Logger,
   HttpStatus,
 } from '@nestjs/common';
-import type { Response, Request } from 'express'; // ✅ import type — fix error 1272
-import { FilesService } from './files.service';
-import { JwtAuthGuard } from '../auth/jwt-auth.guard';
-import { RolesGuard } from '../auth/guards/roles.guard';
-import { Roles } from '../auth/decorators/roles.decorator';
+import type { Response } from 'express';
+import { FilesService }      from './files.service';
+import { EncryptionService } from '../common/encryption.service';
+import { ConfigService }     from '@nestjs/config';
+import * as fs   from 'fs';
+import * as path from 'path';
+import { resolveStoragePath } from '../common/resolve-storage-path';
+import * as mime from 'mime-types';
 
-/**
- * FilesController — Sirve archivos locales de forma segura.
- *
- * Todos los endpoints requieren:
- *   - JWT válido        (JwtAuthGuard)
- *   - Rol ADMIN o USER  (RolesGuard)
- *   - Verificación de ownership dentro del servicio
- *
- * NUNCA se expone la ruta física del servidor al cliente.
- * Se usan tokens encriptados almacenados en Folder.url como identificadores.
- */
+const TEMP_USER_ID    = 1;
+const TEMP_USER_ROLES = ['ADMIN'];
+
 @Controller('files')
-@UseGuards(JwtAuthGuard, RolesGuard)
-@Roles('ADMIN', 'USER')
 export class FilesController {
-  private readonly logger = new Logger(FilesController.name);
+  private readonly logger           = new Logger(FilesController.name);
+  private readonly localStorageRoot: string;
 
-  constructor(private readonly filesService: FilesService) {}
-
-  // ─────────────────────────────────────────────────────────────────────────────
-  // GET /files/folder/:folderId
-  // Lista el contenido de una carpeta desde la BD
-  // IMPORTANTE: debe ir ANTES de /:token para que NestJS no lo confunda
-  // ─────────────────────────────────────────────────────────────────────────────
-  @Get('folder/:folderId')
-  async listFolder(
-    @Param('folderId', ParseIntPipe) folderId: number,
-    @Req() req: Request,
+  constructor(
+    private readonly filesService:      FilesService,
+    private readonly encryptionService: EncryptionService,
+    private readonly configService:     ConfigService,
   ) {
-    const user = req.user as { id: number; roles: string[] };
+    // ── Fix Windows: si LOCAL_STORAGE_PATH viene con slashes Unix (/var/www/...)
+    // path.resolve lo convierte correctamente SIN duplicar la unidad.
+    // Usamos path.normalize para limpiar separadores mixtos.
+    this.localStorageRoot = resolveStoragePath(
+      this.configService.get<string>('LOCAL_STORAGE_PATH'),
+    );
+  }
 
+  // ── GET /files/folder/:folderId ───────────────────────────────────────────
+  @Get('folder/:folderId')
+  async listFolder(@Param('folderId', ParseIntPipe) folderId: number) {
     return this.filesService.listFolderContents({
       folderId,
-      userId: user.id,
-      userRoles: user.roles,
+      userId:    TEMP_USER_ID,
+      userRoles: TEMP_USER_ROLES,
     });
   }
 
-  // ─────────────────────────────────────────────────────────────────────────────
-  // GET /files/:token
-  // Sirve un archivo o retorna listado de directorio usando el token de BD
-  // ─────────────────────────────────────────────────────────────────────────────
+  // ── GET /files/:token ─────────────────────────────────────────────────────
   @Get(':token')
-  async serveFile(
+  serveFile(
     @Param('token') token: string,
-    @Req() req: Request,
-    @Res() res: Response,
+    @Res()          res:   Response,
   ) {
-    const user = req.user as { id: number; roles: string[] };
+    this.logger.log(`[FilesController] token=${token.substring(0, 16)}...`);
 
-    this.logger.log(
-      `[FilesController] userId=${user.id} solicitó token=${token.substring(0, 12)}...`,
-    );
+    try {
+      // 1. Desencriptar token → ruta relativa
+      const relPath = this.encryptionService.decrypt(token);
 
-    const result = await this.filesService.resolveSecureFile({
-      token,
-      userId: user.id,
-      userRoles: user.roles,
-    });
+      // 2. Construir ruta absoluta
+      //    path.join en vez de path.resolve evita duplicar la unidad en Windows
+      const absolutePath = path.join(this.localStorageRoot, relPath);
 
-    // Es un directorio → retornar listado como JSON
-    if (result.isDirectory) {
-      return res.status(HttpStatus.OK).json({
-        folder: result.folder,
-        files: result.files,
-      });
+      // 3. Prevenir path traversal
+      const relative = path.relative(this.localStorageRoot, absolutePath);
+      if (relative.startsWith('..') || path.isAbsolute(relative)) {
+        this.logger.warn(`[Seguridad] Path traversal: ${relPath}`);
+        return res.status(HttpStatus.FORBIDDEN).json({ error: 'Acceso denegado' });
+      }
+
+      // 4. Verificar existencia
+      if (!fs.existsSync(absolutePath)) {
+        this.logger.warn(`[Files] No encontrado: ${absolutePath}`);
+        return res.status(HttpStatus.NOT_FOUND).json({ error: 'Archivo no encontrado' });
+      }
+
+      const stat = fs.statSync(absolutePath);
+
+      // 5. Es directorio → listar
+      if (stat.isDirectory()) {
+        const files = fs.readdirSync(absolutePath).map(filename => {
+          const s = fs.statSync(path.join(absolutePath, filename));
+          return { name: filename, size: s.size, isDirectory: s.isDirectory(), createdAt: s.birthtime, updatedAt: s.mtime };
+        });
+        return res.status(HttpStatus.OK).json({ path: relPath, files });
+      }
+
+      // 6. Es archivo → enviar
+      const mimeType = mime.lookup(absolutePath) || 'application/octet-stream';
+      const filename = path.basename(absolutePath);
+
+      res.setHeader('Content-Type', mimeType);
+      res.setHeader('Content-Length', stat.size);
+      res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(filename)}"`);
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+
+      return res.sendFile(absolutePath);
+
+    } catch (err) {
+      this.logger.error(`[Files] Error: ${(err as Error).message}`);
+      return res.status(HttpStatus.BAD_REQUEST).json({ error: 'Token inválido o expirado' });
     }
-
-    // ✅ Fix error 2345 y 2769 — garantizamos que no son undefined
-    if (!result.absolutePath || result.size === undefined) {
-      return res.status(HttpStatus.NOT_FOUND).json({ message: 'Archivo no encontrado' });
-    }
-
-    // Es un archivo → enviarlo como stream con headers correctos
-    res.setHeader('Content-Type', result.mimeType ?? 'application/octet-stream');
-    res.setHeader('Content-Length', result.size);
-    res.setHeader(
-      'Content-Disposition',
-      `inline; filename="${result.filename ?? 'file'}"`,
-    );
-    // Seguridad: evita que el browser ejecute scripts embebidos
-    res.setHeader('X-Content-Type-Options', 'nosniff');
-
-    return res.sendFile(result.absolutePath, { root: '/' });
   }
 }

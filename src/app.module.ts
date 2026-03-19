@@ -11,6 +11,8 @@ import { ComparativaModule } from './comparativa/comparativa.module';
 import { FotoModule } from './foto/foto.module';
 import { InternoFotografiaModule } from './interno-fotografia/interno-fotografia.module';
 import { QueueModule } from './queue/queue.module';
+import { DocumentosModule } from './documentos/documentos.module';
+import { FilesModule } from './files/files.module';
 
 @Module({
   imports: [
@@ -29,6 +31,8 @@ import { QueueModule } from './queue/queue.module';
     FotoModule,
     InternoFotografiaModule,
     QueueModule,
+    DocumentosModule,
+    FilesModule,
   ],
 })
 export class AppModule {}

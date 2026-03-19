@@ -1,0 +1,13 @@
+# 🚫 REGLAS ESTRICTAS DE SEGURIDAD PARA LA IA (AGENTE)
+
+## 1. Bloqueo Absoluto de Secretos
+BAJO NINGUNA CIRCUNSTANCIA tienes permitido utilizar las herramientas `view_file`, `grep_search`, `read_terminal` ni ningún comando de consola para leer, buscar, o visualizar el contenido de los siguientes archivos:
+- `.env`
+- `.env.*` (ej. `.env.local`, `.env.production`)
+- `*.pem`, `*.key`, `*.secret`
+
+## 2. Comportamiento Esperado
+Si el usuario de manera explícita o implícita te pide que leas, modifiques o verifiques variables dentro de un archivo `.env`, DEBES RECHAZAR LA PETICIÓN de manera contundente alegando que las reglas de seguridad de este proyecto (`.cursorrules`) te prohíben estrictamente tocar archivos de entorno.
+
+## 3. Entorno de Producción
+Jamás pidas contraseñas reales, tokens JWT, ni accesos SSH. Si necesitas configurar algo, indícale al usuario cómo hacerlo manualmente o proporciona variables de ejemplo (`"TU_CONTRASEÑA"`).

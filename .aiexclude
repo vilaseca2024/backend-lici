@@ -1,0 +1,22 @@
+# Archivos y carpetas bloqueados para la IA
+# Funciona igual que .gitignore: los archivos aquí listados
+# nunca serán leídos por el agente ni enviados fuera de tu máquina local.
+
+# Entorno y Secretos
+.env
+.env.*
+*.secret
+*.pem
+*.key
+
+# Carpetas innecesarias para la IA
+node_modules/
+dist/
+build/
+coverage/
+
+# Base de datos local
+*.sqlite
+*.db
+
+# Agrega aquí cualquier otra carpeta privada (ej: src/claves)

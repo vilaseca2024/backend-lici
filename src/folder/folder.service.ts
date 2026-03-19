@@ -5,6 +5,7 @@ import { EncryptionService } from '../common/encryption.service';
 import { ConfigService } from '@nestjs/config';
 import * as fs from 'fs';
 import * as path from 'path';
+import { resolveStoragePath } from '../common/resolve-storage-path';
 
 interface CreateFolderFromInternoParams {
   internoName: string;
@@ -30,20 +31,13 @@ export class FolderService {
     private readonly encryptionService: EncryptionService,
     private readonly configService: ConfigService,
   ) {
-    this.localStorageRoot = this.configService.get<string>(
-      'LOCAL_STORAGE_PATH',
-      path.join(process.cwd(), 'storage'),
-    );
+    this.localStorageRoot = resolveStoragePath(this.configService.get<string>('LOCAL_STORAGE_PATH'));
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
   // UTILIDADES PRIVADAS
   // ─────────────────────────────────────────────────────────────────────────────
 
-  /**
-   * Crea el directorio físico si no existe y retorna la ruta absoluta.
-   * Nunca lanza excepciones — registra el error y retorna null si falla.
-   */
   private ensureLocalDir(relativePath: string): string | null {
     try {
       const absolutePath = path.join(this.localStorageRoot, relativePath);
@@ -58,19 +52,10 @@ export class FolderService {
     }
   }
 
-  /**
-   * ✅ CORREGIDO: Guarda SOLO el token encriptado en BD.
-   * La URL completa se construye en tiempo de respuesta usando APP_BASE_URL.
-   * Así si cambia el dominio, solo se actualiza el .env — no la BD.
-   */
   private encryptPath(relativePath: string): string {
     return this.encryptionService.encrypt(relativePath);
   }
 
-  /**
-   * Construye la URL completa a partir del token almacenado en BD.
-   * Úsalo en el servicio de respuesta, NUNCA para guardar en BD.
-   */
   buildFullUrl(token: string): string {
     const baseUrl = this.configService.get<string>('APP_BASE_URL', 'http://localhost:3000');
     return `${baseUrl}/files/${token}`;
@@ -80,41 +65,26 @@ export class FolderService {
   // CREACIÓN DE CARPETAS
   // ─────────────────────────────────────────────────────────────────────────────
 
-  /**
-   * Crea o reutiliza la carpeta del interno:
-   *   - En Google Drive:  IMCRUZ / <interno>
-   *   - En almacenamiento local:  storage/IMCRUZ/<interno>/
-   *
-   * Guarda en el modelo Folder:
-   *   - url         → ✅ SOLO el token encriptado (sin dominio ni base URL)
-   *   - driveUrl    → URL pública de Google Drive
-   *   - softwareUrl → Token encriptado (interno + cliente), usado internamente
-   */
   async createFromInterno(params: CreateFolderFromInternoParams) {
     const { internoName, cliente, userId } = params;
 
-    // ─── 1. Google Drive: obtener/crear carpeta IMCRUZ ───────────────────────
     const imcruzDriveId = await this.driveService.getOrCreateFolder(
       'IMCRUZ',
       this.configService.get<string>('GOOGLE_DRIVE_IMCRUZ_ID'),
     );
 
-    // ─── 2. Google Drive: obtener/crear carpeta del interno ──────────────────
     const internoDriveId = await this.driveService.getOrCreateFolder(
       internoName,
       imcruzDriveId,
     );
     const driveUrl = this.driveService.getFolderUrl(internoDriveId);
 
-    // ─── 3. softwareUrl: token encriptado (interno + cliente) ────────────────
-    const rawToken = `${internoName}${cliente ?? ''}`;
+    const rawToken    = `${internoName}${cliente ?? ''}`;
     const softwareUrl = this.encryptionService.encrypt(rawToken);
 
-    // ─── 4. Almacenamiento local: crear directorios físicos ──────────────────
-    const imcruzLocalPath = this.ensureLocalDir('IMCRUZ');
+    const imcruzLocalPath  = this.ensureLocalDir('IMCRUZ');
     const internoLocalPath = this.ensureLocalDir(path.join('IMCRUZ', internoName));
 
-    // ✅ Solo guardamos el token — sin base URL
     const internoToken = this.encryptPath(path.join('IMCRUZ', internoName));
     const imcruzToken  = this.encryptPath('IMCRUZ');
 
@@ -122,7 +92,6 @@ export class FolderService {
       this.logger.warn('[LocalStorage] No se pudo crear el directorio físico. Continuando sin él.');
     }
 
-    // ─── 5. BD: buscar o crear carpeta IMCRUZ ────────────────────────────────
     let imcruzFolder = await this.prisma.folder.findFirst({
       where: { name: 'IMCRUZ', parentId: null, deletedAt: null },
     });
@@ -132,20 +101,15 @@ export class FolderService {
         data: {
           name: 'IMCRUZ',
           driveUrl: this.driveService.getFolderUrl(imcruzDriveId),
-          url: imcruzToken,   // ✅ Solo el token
+          url: imcruzToken,
           userId,
         },
       });
       this.logger.log(`[BD] Carpeta IMCRUZ creada con id ${imcruzFolder.id}`);
     }
 
-    // ─── 6. BD: buscar o crear carpeta del interno ───────────────────────────
     let internoFolder = await this.prisma.folder.findFirst({
-      where: {
-        name: internoName,
-        parentId: imcruzFolder.id,
-        deletedAt: null,
-      },
+      where: { name: internoName, parentId: imcruzFolder.id, deletedAt: null },
       include: {
         children: true,
         files: { select: { id: true, name: true, driveUrl: true, url: true } },
@@ -160,7 +124,7 @@ export class FolderService {
           client: cliente,
           driveUrl,
           softwareUrl,
-          url: internoToken,    // ✅ Solo el token — sin base URL
+          url: internoToken,
           parentId: imcruzFolder.id,
           userId,
         },
@@ -178,25 +142,147 @@ export class FolderService {
     return {
       folder: internoFolder,
       driveUrl,
-      localPath: internoLocalPath,                    // Solo uso interno del servidor
-      secureLocalUrl: this.buildFullUrl(internoToken), // URL completa para mostrar al cliente
+      localPath: internoLocalPath,
+      secureLocalUrl: this.buildFullUrl(internoToken),
       imcruzFolderId: imcruzFolder.id,
     };
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // BÚSQUEDA POR NOMBRE
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Busca un folder por nombre exacto (el internoTexto).
+   * Usado por el frontend para obtener el folderId antes de subir documentos.
+   * GET /folders/by-name/:name
+   */
+  // createSubfolder — crea subcarpeta local, en Drive, e idempotentemente en BD
+  async createSubfolder(params: { name: string; parentId: number; userId: number }) {
+    const { name, parentId, userId } = params;
+
+    const existing = await this.prisma.folder.findFirst({
+      where: { name, parentId, deletedAt: null },
+    });
+    if (existing) return existing;
+
+    const parent = await this.prisma.folder.findFirst({
+      where:  { id: parentId, deletedAt: null },
+      select: { id: true, name: true, url: true, driveUrl: true },
+    });
+    if (!parent) throw new NotFoundException(`Folder padre #${parentId} no encontrado`);
+
+    // 1. Manejo local (Filesystem)
+    let parentRelativePath = '';
+    if (parent.url) {
+      try {
+        parentRelativePath = this.encryptionService.decrypt(parent.url);
+        // Fallback porsia es el token malo de antes
+        if (parentRelativePath.startsWith('subfolder-')) parentRelativePath = '';
+      } catch (e) {
+        this.logger.warn(`No se pudo desencriptar url del padre. Usando raiz.`);
+      }
+    }
+    const newRelativePath = path.join(parentRelativePath || 'IMCRUZ', name);
+    this.ensureLocalDir(newRelativePath);
+    const token = this.encryptionService.encrypt(newRelativePath);
+
+    // 2. Manejo en Google Drive
+    let driveUrl: string | null = null;
+    if (parent.driveUrl) {
+      const match = parent.driveUrl.match(/folders\/([a-zA-Z0-9_-]+)/);
+      const parentDriveId = match ? match[1] : null;
+      if (parentDriveId) {
+        try {
+          const newDriveId = await this.driveService.getOrCreateFolder(name, parentDriveId);
+          driveUrl = this.driveService.getFolderUrl(newDriveId);
+        } catch (e) {
+          this.logger.error(`Error creando subcarpeta en Drive: ${e.message}`);
+        }
+      }
+    }
+
+    return this.prisma.folder.create({
+      data: { name, parentId, url: token, softwareUrl: token, driveUrl, userId, active: true },
+    });
+  }
+
+  async findByName(name: string) {
+    const folder = await this.prisma.folder.findFirst({
+      where:  { name, deletedAt: null, active: true },
+      select: { id: true, name: true, slug: true, driveUrl: true, url: true },
+    });
+    if (!folder) throw new NotFoundException(`Folder con nombre "${name}" no encontrado`);
+    return folder;
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // ÁRBOL COMPLETO
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Devuelve el folder raíz cuyo nombre coincide con el internoTexto,
+   * junto con TODA la jerarquía de children (recursiva) y los archivos
+   * (File + Fotos) de cada nivel.
+   * GET /folders/tree/:name
+   */
+  async findTreeByName(name: string) {
+    const root = await this.prisma.folder.findFirst({
+      where:  { name, deletedAt: null, active: true },
+      select: { id: true },
+    });
+    if (!root) throw new NotFoundException(`Folder con nombre "${name}" no encontrado`);
+    return this.loadSubtree(root.id);
+  }
+
+  /** Carga un folder con todos sus children, files y fotos (recursivo) */
+  private async loadSubtree(folderId: number): Promise<any> {
+    const folder = await this.prisma.folder.findFirst({
+      where: { id: folderId, deletedAt: null, active: true },
+      select: {
+        id:       true,
+        name:     true,
+        slug:     true,
+        driveUrl: true,
+        children: {
+          where:   { deletedAt: null, active: true },
+          select:  { id: true },
+          orderBy: { name: 'asc' },
+        },
+        files: {
+          where:   { deletedAt: null, active: true },
+          select: {
+            id: true, name: true, type: true, reference: true,
+            comment: true, status: true, url: true, softwareUrl: true,
+            driveUrl: true, createdAt: true,
+          },
+          orderBy: { createdAt: 'desc' },
+        },
+        fotos: {
+          where:   { deletedAt: null, active: true },
+          select: {
+            id: true, name: true, type: true, reference: true,
+            comment: true, status: true, url: true, softwareUrl: true,
+            driveUrl: true, createdAt: true,
+          },
+          orderBy: { createdAt: 'desc' },
+        },
+      },
+    });
+
+    if (!folder) return null;
+
+    const children = await Promise.all(
+      folder.children.map((c) => this.loadSubtree(c.id)),
+    );
+
+    return { ...folder, children: children.filter(Boolean) };
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
   // CONTROL DE ACCESO
   // ─────────────────────────────────────────────────────────────────────────────
 
-  /**
-   * Verifica que el usuario tiene permiso para acceder a una carpeta.
-   * Reglas:
-   *   - ADMIN puede acceder a todo.
-   *   - Cualquier otro rol solo puede acceder a carpetas que le pertenecen (userId).
-   *
-   * Lanza ForbiddenException si no tiene acceso.
-   * Lanza NotFoundException si la carpeta no existe.
-   */
   async verifyFolderAccess({ folderId, userId, userRoles }: FolderAccessParams) {
     const folder = await this.prisma.folder.findFirst({
       where: { id: folderId, deletedAt: null },
@@ -219,13 +305,6 @@ export class FolderService {
     return folder;
   }
 
-  /**
-   * Resuelve el token encriptado almacenado en BD
-   * y retorna la ruta absoluta local del directorio.
-   *
-   * Úsalo en el endpoint GET /files/:token para servir archivos.
-   * Siempre valida acceso antes de llamar a este método.
-   */
   resolveLocalPath(encryptedToken: string): string {
     const relativePath = this.encryptionService.decrypt(encryptedToken);
     return path.join(this.localStorageRoot, relativePath);
