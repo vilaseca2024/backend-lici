@@ -6,6 +6,6 @@ import { TrazabilidadController } from './trazabilidad.controller';
 @Module({
   providers: [ExternalDbService, TrazabilidadService],
   controllers: [TrazabilidadController],
-  exports: [TrazabilidadService],
+  exports: [TrazabilidadService, ExternalDbService],
 })
 export class ExternalDbModule {}

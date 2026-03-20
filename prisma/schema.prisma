@@ -32,7 +32,7 @@ model User {
   solicitudes Solicitud[]
   folders   Folder[]
   internos  Interno[]
-
+  reportFormats ReportFormat[]
   @@map("users")
 }
 
@@ -307,4 +307,50 @@ model Interno {
   @@index([estado])
   @@index([interno])
   @@map("interno")
+}
+
+
+model ReportFormat {
+  id               Int      @id @default(autoincrement())
+
+  title            String?
+  description      String?
+
+  // Columnas seleccionadas por fuente
+  trazabilidadCode String[]
+  contabilidadCode String[]
+  ageiCode         String[]
+
+  isValidated      Boolean  @default(false)
+  status           String?
+  userId           Int
+  user             User     @relation(fields: [userId], references: [id])
+  isActive         Boolean  @default(true)
+
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  deletedAt        DateTime?
+  updatedBy        Int?
+
+  availableFields  String?
+
+  // Filtros de búsqueda
+  hasSearchFilters     Boolean @default(false)  // buscador completo
+  hasSearchFiltersAll  Boolean @default(false)  // buscador DIM/DEX · Pedido · Factura
+
+  // Filtros de datos
+  hasManagementFilters  Boolean @default(false)  // gestiones
+  hasChannelFilters     Boolean @default(false)  // canal
+  hasDateFilters        Boolean @default(false)  // rango de fechas
+  hasDispatchTypeFilters Boolean @default(false) // tipo de despacho
+  hasRegimenFilters     Boolean @default(false)  // tipo de régimen
+  hasStatusFilters      Boolean @default(false)  // estado de trámite
+
+  // Exportación
+  hasExcelExport        Boolean @default(false)
+  hasPdfExport          Boolean @default(false)
+
+  @@index([userId])
+  @@index([status])
+  @@map("internal")
 }

@@ -8,6 +8,8 @@ import {
 } from '@nestjs/common';
 import { TrazabilidadService, TramiteRow } from './trazabilidad.service';
 
+  
+
 @Controller('trazabilidad')
 export class TrazabilidadController {
   constructor(private readonly trazabilidadService: TrazabilidadService) {}
@@ -16,6 +18,11 @@ export class TrazabilidadController {
    * GET /trazabilidad/:interno
    * Ejemplo: GET /trazabilidad/0001-25
    */
+  @Get('trazabilidad_columnas')
+  async getColumnas() {
+    return this.trazabilidadService.fetchColumnas();
+  }
+  
   @Get(':interno')
   async getTrazabilidad(
     @Param('interno') interno: string,
@@ -67,4 +74,6 @@ export class TrazabilidadController {
     await this.trazabilidadService.invalidarCacheTodos();
     return { message: `Caché general invalidado` };
   }
+
+  
 }

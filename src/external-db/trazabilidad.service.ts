@@ -4,6 +4,7 @@ import { Inject } from '@nestjs/common';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { ConfigService } from '@nestjs/config';
 import { ExternalDbService } from './external-db.service';
+import { COLUMN_LABELS, ColumnMeta } from './column-labels.constant';
 
 // ── Tipos ─────────────────────────────────────────────────────────────────────
 
@@ -53,6 +54,43 @@ export class TrazabilidadService {
       this.logger.warn('CLIENTE_ID vacío — se devolverán trámites de TODOS los clientes');
     } else {
       this.logger.log(`TrazabilidadService iniciado para cliente_id=${JSON.stringify(this.clienteIds)}`);
+    }
+  }
+  
+
+  
+  async fetchColumnas(): Promise<ColumnMeta[]> {
+    const cacheKey = `trazabilidad_columnas_${this.clienteCacheTag}`;
+    const cached = await this.cache.get<ColumnMeta[]>(cacheKey);
+    if (cached) {
+      this.logger.log(`Cache HIT para columnas`);
+      return cached;
+    }
+
+    const sql = `SHOW COLUMNS FROM aduana_tramites`;
+
+    try {
+      const rows = await this.extDb.query<{ Field: string }>(sql, []);
+
+      const columnas: ColumnMeta[] = rows.map((row) => {
+        // Si existe en el diccionario lo usa, si no genera un label automático
+        return COLUMN_LABELS[row.Field] ?? {
+          key: row.Field,
+          label: row.Field,
+          isObservado: row.Field.endsWith('_ob'),
+          isForeignKey: row.Field.endsWith('_id'),
+        };
+      });
+
+      if (columnas.length > 0) {
+        await this.cache.set(cacheKey, columnas, CACHE_TTL_MS);
+      }
+
+      return columnas;
+    } catch (err: unknown) {
+      const error = err as Error;
+      this.logger.error(`fetchColumnas() falló: ${error.message}`);
+      return [];
     }
   }
 
@@ -241,4 +279,6 @@ export class TrazabilidadService {
     await this.cache.del(`trazabilidad_${this.clienteCacheTag}_${interno}`);
     this.logger.log(`Cache invalidado para '${interno}' (cliente ${this.clienteCacheTag})`);
   }
+   
+  
 }

@@ -13,6 +13,8 @@ import { InternoFotografiaModule } from './interno-fotografia/interno-fotografia
 import { QueueModule } from './queue/queue.module';
 import { DocumentosModule } from './documentos/documentos.module';
 import { FilesModule } from './files/files.module';
+import { ReportesModule } from './reportes/reportes.module';
+import { ReportViewerModule } from './report-viewer/report-viewer.module';
 
 @Module({
   imports: [
@@ -33,6 +35,8 @@ import { FilesModule } from './files/files.module';
     QueueModule,
     DocumentosModule,
     FilesModule,
+    ReportesModule,
+    ReportViewerModule,
   ],
 })
 export class AppModule {}
